@@ -71,6 +71,7 @@ export default function App() {
   // Trade Setup modal state
   const [selectedSymbolForTrade, setSelectedSymbolForTrade] = useState<string | null>(null);
   const [tradeModalDirection, setTradeModalDirection] = useState<'LONG' | 'SHORT' | undefined>(undefined);
+  const [targetTradeSymbol, setTargetTradeSymbol] = useState<string | null>(null);
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
 
   const [isAlertsDrawerOpen, setIsAlertsDrawerOpen] = useState(false);
@@ -79,6 +80,15 @@ export default function App() {
   // Alert tracking ref to detect brand-new alerts
   const seenAlertIdsRef = useRef<Set<string>>(new Set());
   const autoResearchedSymbolsRef = useRef<Set<string>>(new Set());
+
+  // Bring up selected coin directly into the live Perfect Trade execution view
+  const handleSelectForTrade = (symbol: string) => {
+    setTargetTradeSymbol(symbol);
+    const el = document.getElementById('perfect-coin-to-trade-section');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
   // Open Trade Setup Modal
   const handleOpenTradeModal = (symbol: string, direction?: 'LONG' | 'SHORT') => {
@@ -409,6 +419,9 @@ export default function App() {
             coins={coins}
             onOpenTradeModal={handleOpenTradeModal}
             onOpenResearch={(sym) => runDeepResearch(sym)}
+            targetSymbol={targetTradeSymbol}
+            onClearTargetSymbol={() => setTargetTradeSymbol(null)}
+            soundEnabled={config.soundEnabled}
           />
         </section>
 
@@ -465,6 +478,7 @@ export default function App() {
                 coin={coin}
                 onOpenResearch={(sym) => runDeepResearch(sym)}
                 onOpenTradeModal={handleOpenTradeModal}
+                onSelectForTrade={handleSelectForTrade}
                 isWatchlisted={watchlist.has(coin.symbol)}
                 onToggleWatchlist={toggleWatchlist}
                 isResearchLoading={isResearchLoading && selectedSymbolForResearch === coin.symbol}
@@ -476,6 +490,7 @@ export default function App() {
             coins={filteredAndSortedCoins}
             onOpenResearch={(sym) => runDeepResearch(sym)}
             onOpenTradeModal={handleOpenTradeModal}
+            onSelectForTrade={handleSelectForTrade}
             watchlist={watchlist}
             onToggleWatchlist={toggleWatchlist}
           />

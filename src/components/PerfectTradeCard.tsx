@@ -17,9 +17,15 @@ import {
   ChevronDown,
   ChevronUp,
   Search,
-  CheckCircle2
+  CheckCircle2,
+  Play,
+  Pause,
+  Radio,
+  X,
+  Crosshair
 } from 'lucide-react';
 import { TradeSetup, CryptoCoin } from '../types';
+import { playSurgeAlertSound } from '../utils/audioAlert';
 
 interface TopPickItem {
   symbol: string;
@@ -36,6 +42,9 @@ interface PerfectTradeCardProps {
   coins?: CryptoCoin[];
   onOpenTradeModal: (symbol: string, direction?: 'LONG' | 'SHORT') => void;
   onOpenResearch: (symbol: string) => void;
+  targetSymbol?: string | null;
+  onClearTargetSymbol?: () => void;
+  soundEnabled?: boolean;
 }
 
 // Format price utility
@@ -182,6 +191,9 @@ export function PerfectTradeCard({
   coins = [],
   onOpenTradeModal,
   onOpenResearch,
+  targetSymbol,
+  onClearTargetSymbol,
+  soundEnabled = true,
 }: PerfectTradeCardProps) {
   const [trade, setTrade] = useState<TradeSetup | null>(null);
   const [topPicks, setTopPicks] = useState<TopPickItem[]>([]);
@@ -193,6 +205,17 @@ export function PerfectTradeCard({
   const [showCalculator, setShowCalculator] = useState<boolean>(false);
   const [coinSearchQuery, setCoinSearchQuery] = useState<string>('');
   const [showCoinDropdown, setShowCoinDropdown] = useState<boolean>(false);
+
+  // Live Auto-Tracking State: automatically brings up the coin to go for on Bybit!
+  const [isAutoTracking, setIsAutoTracking] = useState<boolean>(true);
+  const [countdown, setCountdown] = useState<number>(4);
+  const [autoSwitchedAlert, setAutoSwitchedAlert] = useState<{
+    symbol: string;
+    previousSymbol?: string;
+    direction: 'LONG' | 'SHORT';
+    score: number;
+    timestamp: number;
+  } | null>(null);
 
   // Position sizing calculator state
   const [accountSize, setAccountSize] = useState<number>(1000);
@@ -236,6 +259,82 @@ export function PerfectTradeCard({
       }
     }
   };
+
+  // Synchronize target symbol when clicked from "Go For This Coin" elsewhere
+  useEffect(() => {
+    if (targetSymbol) {
+      setActiveSymbol(targetSymbol);
+      setIsAutoTracking(false);
+      fetchPerfectTrade(directionFilter === 'ALL' ? undefined : directionFilter, targetSymbol, true);
+    }
+  }, [targetSymbol]);
+
+  // Real-time live auto-detection loop: brings up newest #1 coin every 4 seconds!
+  useEffect(() => {
+    if (!isAutoTracking || activeSymbol) return;
+
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          // Re-scan Bybit orderbooks for the best coin
+          const dir = directionFilter === 'ALL' ? undefined : directionFilter;
+          fetch(`/api/crypto/perfect-trade?force=true${dir ? `&direction=${dir}` : ''}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+              if (data?.success && data.trade) {
+                const newTrade: TradeSetup = data.trade;
+                setTrade((current) => {
+                  if (current && current.symbol !== newTrade.symbol) {
+                    setAutoSwitchedAlert({
+                      symbol: newTrade.symbol,
+                      previousSymbol: current.symbol,
+                      direction: newTrade.direction,
+                      score: newTrade.confidenceScore,
+                      timestamp: Date.now(),
+                    });
+                    if (soundEnabled) {
+                      playSurgeAlertSound(0.7);
+                    }
+                  }
+                  return newTrade;
+                });
+                if (data.topPicks && Array.isArray(data.topPicks)) {
+                  setTopPicks(data.topPicks);
+                }
+              }
+            })
+            .catch(() => {});
+          return 4;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isAutoTracking, activeSymbol, directionFilter, soundEnabled]);
+
+  // Keep live orderbook price dynamically synchronized with incoming Bybit tick
+  useEffect(() => {
+    if (!trade || coins.length === 0) return;
+    const liveCoin = coins.find((c) => c.symbol === trade.symbol);
+    if (liveCoin && liveCoin.price > 0 && Math.abs(liveCoin.price - trade.currentPrice) > 0.0000001) {
+      setTrade((prev) => {
+        if (!prev || prev.symbol !== liveCoin.symbol) return prev;
+        return {
+          ...prev,
+          currentPrice: liveCoin.price,
+        };
+      });
+    }
+  }, [coins, trade?.symbol]);
+
+  // Auto-dismiss auto-switched banner after 8 seconds
+  useEffect(() => {
+    if (autoSwitchedAlert) {
+      const t = setTimeout(() => setAutoSwitchedAlert(null), 8000);
+      return () => clearTimeout(t);
+    }
+  }, [autoSwitchedAlert]);
 
   // On mount and filter changes
   useEffect(() => {
@@ -404,14 +503,48 @@ Generated: ${new Date(trade.generatedAt).toLocaleTimeString()}`;
           </div>
         </div>
 
-        {/* Direction Filter Tabs & Re-analyze action */}
-        <div className="flex items-center gap-2">
+        {/* Direction Filter Tabs & Live Auto-Tracking Controls */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Live Auto-Tracking Toggle Button */}
+          {isAutoTracking && !activeSymbol ? (
+            <button
+              type="button"
+              onClick={() => setIsAutoTracking(false)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/90 border border-emerald-500/70 text-emerald-300 text-xs font-bold transition-all shadow-xs shadow-emerald-950/40 hover:bg-emerald-900/80"
+              title="Radar is actively tracking Bybit live feed and bringing up the #1 coin. Click to pause."
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-80"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span className="tracking-wide">Live Auto-Tracking ({countdown}s)</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSymbol(null);
+                setIsAutoTracking(true);
+                setCountdown(4);
+                onClearTargetSymbol?.();
+                fetchPerfectTrade(directionFilter === 'ALL' ? undefined : directionFilter, undefined, true);
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-700 hover:border-emerald-500 text-zinc-300 hover:text-emerald-300 text-xs font-bold transition-all shadow-xs"
+              title="Click to resume real-time tracking of the #1 coin to go for"
+            >
+              <Play className="w-3 h-3 text-emerald-400 fill-emerald-400" />
+              <span>Resume Live Auto-Tracking</span>
+            </button>
+          )}
+
           <div className="flex items-center p-0.5 rounded-lg bg-zinc-950/80 border border-zinc-800 text-xs">
             <button
               type="button"
               onClick={() => {
                 setDirectionFilter('ALL');
                 setActiveSymbol(null);
+                setIsAutoTracking(true);
+                onClearTargetSymbol?.();
               }}
               className={`px-2.5 py-1 rounded-md font-semibold transition-colors ${
                 directionFilter === 'ALL'
@@ -426,6 +559,8 @@ Generated: ${new Date(trade.generatedAt).toLocaleTimeString()}`;
               onClick={() => {
                 setDirectionFilter('LONG');
                 setActiveSymbol(null);
+                setIsAutoTracking(true);
+                onClearTargetSymbol?.();
               }}
               className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1 transition-colors ${
                 directionFilter === 'LONG'
@@ -441,6 +576,8 @@ Generated: ${new Date(trade.generatedAt).toLocaleTimeString()}`;
               onClick={() => {
                 setDirectionFilter('SHORT');
                 setActiveSymbol(null);
+                setIsAutoTracking(true);
+                onClearTargetSymbol?.();
               }}
               className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1 transition-colors ${
                 directionFilter === 'SHORT'
@@ -468,6 +605,85 @@ Generated: ${new Date(trade.generatedAt).toLocaleTimeString()}`;
           </button>
         </div>
       </div>
+
+      {/* Auto-Switched Real-Time Alert Banner */}
+      {autoSwitchedAlert && (
+        <div className="mt-3 p-2.5 rounded-xl bg-gradient-to-r from-emerald-950 via-zinc-900 to-amber-950/80 border border-emerald-500/60 shadow-lg flex items-center justify-between text-xs animate-in fade-in slide-in-from-top-1 duration-300">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2.5 w-2.5 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-80"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <div className="flex flex-wrap items-center gap-1.5 text-zinc-100 font-semibold">
+              <span className="text-amber-400 font-bold flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                NEW #1 COIN BROUGHT UP:
+              </span>
+              <span className="text-emerald-400 font-extrabold text-sm">{autoSwitchedAlert.symbol}</span>
+              <span
+                className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold ${
+                  autoSwitchedAlert.direction === 'LONG'
+                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/60'
+                    : 'bg-rose-950 text-rose-300 border border-rose-700/60'
+                }`}
+              >
+                {autoSwitchedAlert.direction}
+              </span>
+              <span className="text-zinc-400 text-[11px] hidden sm:inline font-normal">
+                — {autoSwitchedAlert.previousSymbol ? `Overtook ${autoSwitchedAlert.previousSymbol} with ` : ''}
+                <strong className="text-zinc-200">{autoSwitchedAlert.score}%</strong> confidence on Bybit orderflow
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSymbol(autoSwitchedAlert.symbol);
+                setIsAutoTracking(false);
+              }}
+              className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[11px] font-semibold border border-zinc-700"
+            >
+              Pin Coin
+            </button>
+            <button
+              type="button"
+              onClick={() => setAutoSwitchedAlert(null)}
+              className="text-zinc-500 hover:text-zinc-300 p-0.5"
+              title="Dismiss"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Pin Alert Banner (When user chose a specific coin instead of auto-tracking) */}
+      {activeSymbol && (
+        <div className="mt-3 px-3 py-1.5 rounded-lg bg-zinc-950/90 border border-amber-500/40 flex items-center justify-between text-xs text-zinc-300">
+          <div className="flex items-center gap-2">
+            <Crosshair className="w-3.5 h-3.5 text-amber-400" />
+            <span>
+              Manually inspecting: <strong className="text-amber-300 font-bold">{activeSymbol}</strong>
+            </span>
+            <span className="text-zinc-500 text-[11px] hidden sm:inline">(Live auto-tracking paused)</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveSymbol(null);
+              setIsAutoTracking(true);
+              setCountdown(4);
+              onClearTargetSymbol?.();
+              fetchPerfectTrade(directionFilter === 'ALL' ? undefined : directionFilter, undefined, true);
+            }}
+            className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 font-bold text-xs transition-colors"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            <span>Resume Auto-Detecting Top Coin</span>
+          </button>
+        </div>
+      )}
 
       {/* Quick Coin Selectors Row */}
       <div className="flex flex-wrap items-center gap-1.5 pt-3 pb-1 text-xs">

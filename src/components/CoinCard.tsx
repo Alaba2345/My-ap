@@ -8,6 +8,7 @@ interface CoinCardProps {
   coin: CryptoCoin;
   onOpenResearch: (symbol: string) => void;
   onOpenTradeModal?: (symbol: string, direction?: 'LONG' | 'SHORT') => void;
+  onSelectForTrade?: (symbol: string) => void;
   isWatchlisted: boolean;
   onToggleWatchlist: (symbol: string) => void;
   isResearchLoading?: boolean;
@@ -17,6 +18,7 @@ export function CoinCard({
   coin,
   onOpenResearch,
   onOpenTradeModal,
+  onSelectForTrade,
   isWatchlisted,
   onToggleWatchlist,
   isResearchLoading = false,
@@ -193,27 +195,35 @@ export function CoinCard({
         </div>
       </div>
 
-      {/* Dual Actions: 1. Trade Setup (TP/SL) & 2. AI Research */}
+      {/* Actions: 1. Go For This Coin (Sets as active live trade) 2. TP/SL Plan 3. AI */}
       <div className="flex items-center gap-1.5 pt-1">
         <button
           type="button"
-          onClick={() => onOpenTradeModal?.(coin.symbol, isBullish ? 'LONG' : 'SHORT')}
-          className="flex-1 py-1.5 px-2 rounded-lg text-xs font-bold tracking-wide flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-zinc-950 transition-all shadow-xs"
-          title={`Set TP, Entry, and SL for ${coin.symbol}`}
+          onClick={() => onSelectForTrade?.(coin.symbol)}
+          className="flex-1 py-1.5 px-2 rounded-lg text-xs font-bold tracking-wide flex items-center justify-center gap-1 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 transition-all shadow-xs"
+          title={`Select ${coin.symbol} as the active live Bybit trade`}
         >
           <Target className="w-3.5 h-3.5" />
-          <span>TP / SL Plan</span>
+          <span>Go For This</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onOpenTradeModal?.(coin.symbol, isBullish ? 'LONG' : 'SHORT')}
+          className="py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition-colors"
+          title={`Set custom TP, Entry, and SL for ${coin.symbol}`}
+        >
+          <span>TP/SL</span>
         </button>
 
         <button
           type="button"
           onClick={() => onOpenResearch(coin.symbol)}
           disabled={isResearchLoading}
-          className="py-1.5 px-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition-colors"
+          className="py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 bg-zinc-850 hover:bg-zinc-800 text-purple-300 border border-purple-900/40 transition-colors"
           title="Gemini AI Deep Research"
         >
           <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-          <span className="hidden sm:inline">AI</span>
         </button>
       </div>
     </div>

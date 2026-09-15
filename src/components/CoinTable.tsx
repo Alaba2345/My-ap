@@ -6,6 +6,7 @@ interface CoinTableProps {
   coins: CryptoCoin[];
   onOpenResearch: (symbol: string) => void;
   onOpenTradeModal?: (symbol: string, direction?: 'LONG' | 'SHORT') => void;
+  onSelectForTrade?: (symbol: string) => void;
   watchlist: Set<string>;
   onToggleWatchlist: (symbol: string) => void;
 }
@@ -14,6 +15,7 @@ export function CoinTable({
   coins,
   onOpenResearch,
   onOpenTradeModal,
+  onSelectForTrade,
   watchlist,
   onToggleWatchlist,
 }: CoinTableProps) {
@@ -177,16 +179,25 @@ export function CoinTable({
                   </div>
                 </td>
 
-                {/* Actions: TP/SL & AI */}
+                {/* Actions: Go For This, TP/SL & AI */}
                 <td className="py-3 px-3 text-right">
                   <div className="flex items-center justify-end gap-1.5">
                     <button
                       type="button"
-                      onClick={() => onOpenTradeModal?.(coin.symbol, isBullish ? 'LONG' : 'SHORT')}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-zinc-950 text-[11px] font-bold transition-all shadow-xs"
-                      title="Set TP, Entry, and SL"
+                      onClick={() => onSelectForTrade?.(coin.symbol)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-[11px] font-bold transition-all shadow-xs"
+                      title="Bring up as the active live trade target"
                     >
                       <Target className="w-3 h-3" />
+                      <span>Go For This</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onOpenTradeModal?.(coin.symbol, isBullish ? 'LONG' : 'SHORT')}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-semibold transition-all border border-zinc-700"
+                      title="Set TP, Entry, and SL"
+                    >
                       <span>TP/SL</span>
                     </button>
 
