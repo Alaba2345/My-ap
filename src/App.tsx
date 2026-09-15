@@ -244,28 +244,93 @@ export default function App() {
     return () => clearInterval(interval);
   }, [fetchMarketData]);
 
+  // Helper to detect non-crypto or stock contracts
+  const isNonCryptoOrStock = (symbol: string) => {
+    const stockPatterns = ['STOCK', 'SOXL', 'NVDA', 'TSLA', 'AAPL', 'MSFT', 'AMZN', 'GOOG', 'META', 'SPY', 'QQQ'];
+    return stockPatterns.some((pattern) => symbol.toUpperCase().includes(pattern));
+  };
+
+  // Helper to determine if a coin qualifies as a "Perfect Trade" candidate
+  const isPerfectTradeCoin = useCallback((c: CryptoCoin) => {
+    if (isNonCryptoOrStock(c.symbol)) return false;
+    const vol = c.turnover24h || c.volume24h || 0;
+    if (vol < 5_000_000) return false;
+
+    // Core liquid bluechips are always primary setups
+    if (['BTC', 'ETH', 'SOL', 'XRP', 'SUI', 'DOGE', 'NEAR', 'AVAX', 'LINK', 'AKE', 'POWER'].includes(c.symbol)) {
+      return true;
+    }
+
+    // High momentum with solid institutional turnover
+    if (c.surgeScore >= 50 && vol >= 10_000_000) return true;
+    if (Math.abs(c.change1h) >= 2.0 && vol >= 8_000_000) return true;
+    if (c.isSurging && vol >= 6_000_000) return true;
+
+    return false;
+  }, []);
+
   // Filter and sort coins
   const filteredAndSortedCoins = useMemo(() => {
     let list = [...coins];
 
     // Search and volume filters
     if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase();
-      list = list.filter((c) => c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
+      const q = searchTerm.toLowerCase().trim();
+
+      // Check for search keyword matches: "perfect", "trade", "perfect trade", "setup", "signal", "pick"
+      const isPerfectSearch =
+        q === 'perfect' ||
+        q === 'trade' ||
+        q === 'perfect trade' ||
+        q === 'perfect trades' ||
+        q === 'setup' ||
+        q === 'setups' ||
+        q === 'pick' ||
+        q === 'picks' ||
+        q === 'signal' ||
+        q === 'signals' ||
+        q === 'best' ||
+        q === 'top pick' ||
+        q === 'top picks';
+
+      if (isPerfectSearch) {
+        list = list.filter((c) => isPerfectTradeCoin(c));
+      } else if (q === 'long' || q === 'longs' || q === 'long setup') {
+        list = list.filter((c) => c.change1h >= 0);
+      } else if (q === 'short' || q === 'shorts' || q === 'short setup') {
+        list = list.filter((c) => c.change1h < 0);
+      } else if (q === 'breakout' || q === 'surging' || q === 'surge') {
+        list = list.filter((c) => c.isSurging || c.change5m >= config.min5mSurge);
+      } else if (q.includes('vol') || q.includes('10m') || q.includes('50m')) {
+        const minVol = q.includes('50m') ? 50_000_000 : 10_000_000;
+        list = list.filter((c) => (c.turnover24h || c.volume24h || 0) >= minVol || isPerfectTradeCoin(c));
+      } else {
+        list = list.filter((c) =>
+          c.symbol.toLowerCase().includes(q) ||
+          c.name.toLowerCase().includes(q) ||
+          (isPerfectTradeCoin(c) && q.includes('trade'))
+        );
+      }
     } else {
-      // Volume threshold filter (using USD turnover/volume)
-      list = list.filter((c) => (c.turnover24h || c.volume24h) >= config.minVolume24h);
+      // Volume threshold filter
+      // CRITICAL: Any coin that qualifies as a Perfect Trade setup is ALWAYS preserved or passes volume threshold!
+      list = list.filter((c) => {
+        const vol = c.turnover24h || c.volume24h || 0;
+        return vol >= config.minVolume24h || isPerfectTradeCoin(c);
+      });
     }
 
     // Category filter
-    if (activeCategory === 'surging') {
+    if (activeCategory === 'perfect') {
+      list = list.filter((c) => isPerfectTradeCoin(c));
+    } else if (activeCategory === 'surging') {
       list = list.filter((c) => c.isSurging || c.change5m >= config.min5mSurge);
     } else if (activeCategory === 'long') {
       list = list.filter((c) => c.change1h >= 0);
     } else if (activeCategory === 'short') {
       list = list.filter((c) => c.change1h < 0);
     } else if (activeCategory === 'liquid') {
-      list = list.filter((c) => c.turnover24h >= 15_000_000);
+      list = list.filter((c) => (c.turnover24h || c.volume24h) >= 15_000_000);
     } else if (activeCategory === 'mega') {
       list = list.filter((c) => c.marketCapTier === 'mega');
     } else if (activeCategory === 'watchlist') {
@@ -278,16 +343,20 @@ export default function App() {
       if (sortBy === 'change5m') return b.change5m - a.change5m;
       if (sortBy === 'change1h') return b.change1h - a.change1h;
       if (sortBy === 'change24h') return b.change24h - a.change24h;
-      if (sortBy === 'volume24h') return b.turnover24h - a.turnover24h;
+      if (sortBy === 'volume24h') return (b.turnover24h || b.volume24h) - (a.turnover24h || a.volume24h);
       return 0;
     });
 
     return list;
-  }, [coins, config.minVolume24h, config.min5mSurge, searchTerm, activeCategory, sortBy, watchlist]);
+  }, [coins, config.minVolume24h, config.min5mSurge, searchTerm, activeCategory, sortBy, watchlist, isPerfectTradeCoin]);
 
   const activeSurgesCount = useMemo(() => {
     return coins.filter((c) => c.isSurging || c.change5m >= config.min5mSurge).length;
   }, [coins, config.min5mSurge]);
+
+  const perfectTradesCount = useMemo(() => {
+    return coins.filter((c) => isPerfectTradeCoin(c)).length;
+  }, [coins, isPerfectTradeCoin]);
 
   const selectedCoin = useMemo(() => {
     if (!selectedSymbolForResearch) return undefined;
@@ -355,6 +424,8 @@ export default function App() {
           onViewModeChange={setViewMode}
           surgingCount={activeSurgesCount}
           watchlistCount={watchlist.size}
+          perfectTradesCount={perfectTradesCount}
+          onVolumeThresholdChange={(vol) => updateConfig({ minVolume24h: vol })}
           onOpenSettings={() => setIsSettingsModalOpen(true)}
           config={config}
         />

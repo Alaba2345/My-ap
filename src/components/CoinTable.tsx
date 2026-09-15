@@ -40,6 +40,10 @@ export function CoinTable({
             const isWatchlisted = watchlist.has(coin.symbol);
             const isSurging = coin.isSurging || coin.change5m >= 2.0;
             const isBullish = coin.change1h >= 0;
+            const isPerfectTrade =
+              !['STOCK', 'SOXL', 'NVDA', 'TSLA', 'AAPL'].some((s) => coin.symbol.includes(s)) &&
+              (coin.turnover24h || coin.volume24h) >= 8_000_000 &&
+              (coin.surgeScore >= 50 || ['BTC', 'ETH', 'SOL', 'XRP', 'SUI', 'DOGE', 'AKE'].includes(coin.symbol) || Math.abs(coin.change1h) >= 2.0);
             const bybitPair = coin.bybitSymbol || `${coin.symbol}USDT`;
             const turnoverDisplay = coin.turnover24h >= 1e9
               ? `$${(coin.turnover24h / 1e9).toFixed(2)}B`
@@ -79,6 +83,15 @@ export function CoinTable({
                         {isSurging && (
                           <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase">
                             Breakout
+                          </span>
+                        )}
+                        {isPerfectTrade && (
+                          <span
+                            className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-0.5"
+                            title="Qualifies as Bybit Perfect Trade setup"
+                          >
+                            <Target className="w-2.5 h-2.5 text-amber-400" />
+                            Perfect Trade
                           </span>
                         )}
                       </div>

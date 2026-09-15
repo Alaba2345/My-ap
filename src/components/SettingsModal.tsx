@@ -96,24 +96,26 @@ export function SettingsModal({
                 ${(config.minVolume24h / 1_000_000).toFixed(1)}M USD
               </span>
             </div>
-            <div className="grid grid-cols-4 gap-2">
-              {[500_000, 1_000_000, 5_000_000, 15_000_000].map((vol) => (
+            <div className="grid grid-cols-5 gap-1.5">
+              {[0, 1_000_000, 5_000_000, 10_000_000, 25_000_000].map((vol) => (
                 <button
                   key={vol}
                   type="button"
                   onClick={() => onChangeConfig({ minVolume24h: vol })}
-                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold border transition-all ${
+                  className={`py-1.5 px-1.5 rounded-lg text-xs font-semibold border transition-all text-center ${
                     config.minVolume24h === vol
                       ? 'bg-zinc-100 text-zinc-950 border-zinc-100'
+                      : vol === 10_000_000
+                      ? 'bg-amber-500/10 text-amber-300 border-amber-500/40 hover:bg-amber-500/20'
                       : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-zinc-200'
                   }`}
                 >
-                  ${vol >= 1_000_000 ? `${vol / 1_000_000}M` : `${vol / 1_000}k`}
+                  {vol === 0 ? 'All ($0)' : vol === 10_000_000 ? '⭐ $10M' : `$${vol / 1_000_000}M`}
                 </button>
               ))}
             </div>
             <p className="text-[11px] text-zinc-500">
-              Filters out illiquid low-volume microcaps to avoid false positive breakout alerts.
+              $10M+ threshold matches Bybit institutional orderflow criteria for Perfect Trade setups.
             </p>
           </div>
 
