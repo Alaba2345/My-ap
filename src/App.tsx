@@ -248,13 +248,13 @@ export default function App() {
   const filteredAndSortedCoins = useMemo(() => {
     let list = [...coins];
 
-    // Volume threshold filter
-    list = list.filter((c) => c.volume24h >= config.minVolume24h);
-
-    // Search filter
+    // Search and volume filters
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase();
       list = list.filter((c) => c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
+    } else {
+      // Volume threshold filter (using USD turnover/volume)
+      list = list.filter((c) => (c.turnover24h || c.volume24h) >= config.minVolume24h);
     }
 
     // Category filter
@@ -337,6 +337,7 @@ export default function App() {
         {/* PRIMARY FEATURE: Automated Perfect Coin Selection & Trade Setup (TP, Entry, SL) */}
         <section aria-label="Automated Perfect Trade Analysis">
           <PerfectTradeCard
+            coins={coins}
             onOpenTradeModal={handleOpenTradeModal}
             onOpenResearch={(sym) => runDeepResearch(sym)}
           />

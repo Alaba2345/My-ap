@@ -257,7 +257,7 @@ async function fetchLiveMarketData() {
             change15m: parseFloat((change5m * 1.6).toFixed(2)),
             change1h: parseFloat(change1h.toFixed(2)),
             change24h: parseFloat(change24h.toFixed(2)),
-            volume24h,
+            volume24h: turnover24h, // Standardize 24h volume to USD turnover across all coin metrics
             turnover24h,
             openInterest,
             fundingRate,
@@ -441,54 +441,129 @@ function formatPrice(p: number): string {
   return p.toFixed(8);
 }
 
+// Non-crypto or pre-market stock tickers that may exist in Bybit catalog
+function isNonCryptoOrStock(sym: string): boolean {
+  const s = sym.toUpperCase();
+  return (
+    s.includes("STOCK") ||
+    s.includes("SOXL") ||
+    ["NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "GOOGL", "XAU", "XAG", "USDC", "EUR"].includes(s)
+  );
+}
+
 // Algorithmic Selection of the #1 "Perfect Coin to Trade" across all Bybit perpetuals
-function findPerfectTradeCoin(allCoins: any[], preferredDirection?: 'LONG' | 'SHORT') {
+function findPerfectTradeCoin(allCoins: any[], preferredDirection?: 'LONG' | 'SHORT', requestedSymbol?: string) {
   if (!allCoins || allCoins.length === 0) return null;
 
-  // Filter coins with sufficient Bybit liquidity (> $6M turnover) so orders execute cleanly with low spread
+  // If a specific symbol was requested, find it and generate its setup
+  if (requestedSymbol) {
+    const sym = requestedSymbol.toUpperCase();
+    const specificCoin = allCoins.find((c) => c.symbol === sym || c.bybitSymbol === sym || c.bybitSymbol === `${sym}USDT`);
+    if (specificCoin) {
+      const singleTrade = generateTradeSetup(specificCoin);
+      if (preferredDirection && singleTrade.direction !== preferredDirection) {
+        singleTrade.direction = preferredDirection;
+      }
+      return { trade: singleTrade, topPicks: [] };
+    }
+  }
+
+  // Filter coins with sufficient Bybit liquidity (> $10M turnover or top high-conviction tier)
   const candidates = allCoins.filter(
-    (c) => (c.turnover24h >= 6_000_000 || ['BTC', 'ETH', 'SOL', 'SUI', 'DOGE', 'XRP'].includes(c.symbol)) && c.price > 0
+    (c) =>
+      !isNonCryptoOrStock(c.symbol) &&
+      (c.turnover24h >= 10_000_000 || ["BTC", "ETH", "SOL", "SUI", "DOGE", "XRP", "NEAR", "AKE", "ARB", "PEPE", "AVAX", "LINK"].includes(c.symbol)) &&
+      c.price > 0
   );
 
-  const scored = candidates.map((coin) => {
+  const pool = candidates.length > 0 ? candidates : allCoins.filter((c) => !isNonCryptoOrStock(c.symbol) && c.price > 0);
+
+  const scored = pool.map((coin) => {
     const isLong = coin.change1h >= 0 || (coin.change24h > 4 && coin.change1h > -1);
     const range = coin.high24h - coin.low24h;
     const posInRange = range > 0 ? (coin.price - coin.low24h) / range : 0.5;
 
     let score = 50;
     // 1h momentum weight
-    score += Math.abs(coin.change1h) * 4;
+    score += Math.abs(coin.change1h) * 3.5;
     // 5m velocity weight
     score += Math.abs(coin.change5m) * 3;
-    // Bybit turnover log weight
-    score += Math.min(25, Math.log10(Math.max(1000, coin.turnover24h)) * 3);
+    // Bybit turnover log weight (rewards deep liquid markets with clean execution)
+    score += Math.min(28, Math.log10(Math.max(1000, coin.turnover24h)) * 3.2);
+
+    // Tier 1 liquidity bonus (BTC, ETH, SOL, SUI, XRP)
+    if (["BTC", "ETH", "SOL", "SUI", "XRP", "DOGE"].includes(coin.symbol)) {
+      score += 10;
+    }
 
     // Breakout confluence
-    if (isLong && posInRange > 0.82) score += 16;
+    if (isLong && posInRange > 0.82) score += 14;
     // Bounce confluence
-    if (isLong && posInRange < 0.25 && coin.change5m > 0.5) score += 14;
+    if (isLong && posInRange < 0.25 && coin.change5m > 0.5) score += 12;
     // Breakdown short confluence
-    if (!isLong && posInRange < 0.18) score += 15;
+    if (!isLong && posInRange < 0.2) score += 12;
 
     // Healthy funding rate bonus
-    if (Math.abs(coin.fundingRate) < 0.0003) score += 8;
+    if (Math.abs(coin.fundingRate) < 0.0003) score += 6;
 
     return {
       coin,
       score,
-      direction: isLong ? 'LONG' : 'SHORT',
+      direction: (isLong ? 'LONG' : 'SHORT') as 'LONG' | 'SHORT',
     };
   });
+
+  // Sort overall by score
+  scored.sort((a, b) => b.score - a.score);
 
   // Filter if preferred direction is specified
   const filtered = preferredDirection
     ? scored.filter((s) => s.direction === preferredDirection)
     : scored;
 
-  filtered.sort((a, b) => b.score - a.score);
-  const best = filtered[0] || scored[0];
+  const bestCandidate = filtered[0] || scored[0];
+  const primaryTrade = bestCandidate ? generateTradeSetup(bestCandidate.coin) : null;
 
-  return best ? generateTradeSetup(best.coin) : null;
+  // Build top 4 diverse picks
+  const topLong = scored.find((s) => s.direction === 'LONG');
+  const topShort = scored.find((s) => s.direction === 'SHORT');
+  const topMega = scored.find((s) => ['BTC', 'ETH', 'SOL'].includes(s.coin.symbol));
+  const topBreakout = scored.find((s) => s.coin.isSurging || s.coin.change5m >= 2.0);
+
+  const topPicksMap = new Map<string, any>();
+  if (primaryTrade) {
+    topPicksMap.set(primaryTrade.symbol, {
+      symbol: primaryTrade.symbol,
+      name: primaryTrade.name,
+      bybitSymbol: primaryTrade.bybitSymbol,
+      direction: primaryTrade.direction,
+      currentPrice: primaryTrade.currentPrice,
+      confidenceScore: primaryTrade.confidenceScore,
+      setupType: primaryTrade.setupType,
+      tag: "🔥 #1 Best Pick",
+    });
+  }
+
+  [topLong, topShort, topMega, topBreakout].forEach((item) => {
+    if (item && !topPicksMap.has(item.coin.symbol)) {
+      const t = generateTradeSetup(item.coin);
+      topPicksMap.set(item.coin.symbol, {
+        symbol: t.symbol,
+        name: t.name,
+        bybitSymbol: t.bybitSymbol,
+        direction: t.direction,
+        currentPrice: t.currentPrice,
+        confidenceScore: t.confidenceScore,
+        setupType: t.setupType,
+        tag: item === topLong ? "📈 Top Long" : item === topShort ? "📉 Top Short" : item === topMega ? "💎 Top Bluechip" : "⚡ Top Breakout",
+      });
+    }
+  });
+
+  return {
+    trade: primaryTrade,
+    topPicks: Array.from(topPicksMap.values()),
+  };
 }
 
 function generateInitialFallbackCoins(now: number) {
@@ -512,7 +587,7 @@ function generateInitialFallbackCoins(now: number) {
     change15m: parseFloat((s.change1h * 0.7).toFixed(2)),
     change1h: s.change1h,
     change24h: s.change24h,
-    volume24h: s.turnover / s.price,
+    volume24h: s.turnover, // Standardize to USD turnover
     turnover24h: s.turnover,
     openInterest: s.turnover * 0.4,
     fundingRate: 0.0001,
@@ -593,33 +668,29 @@ app.get("/api/crypto/market", async (req, res) => {
 app.get("/api/crypto/perfect-trade", async (req, res) => {
   try {
     const preferredDirection = req.query.direction as 'LONG' | 'SHORT' | undefined;
+    const requestedSymbol = req.query.symbol as string | undefined;
     const forceRefresh = req.query.force === 'true';
     const now = Date.now();
 
-    // Cache perfect trade for 10 seconds unless forced
-    if (!forceRefresh && cachedPerfectTrade && now - lastPerfectTradeTime < 10000 && !preferredDirection) {
+    const coins = await fetchLiveMarketData();
+    const result = findPerfectTradeCoin(coins, preferredDirection, requestedSymbol);
+
+    if (!result || !result.trade) {
+      // Guaranteed fallback: pick top coin from coins (SOL, BTC, or highest volume)
+      const fallbackCoin = coins.find((c) => c.symbol === 'SOL') || coins[0];
+      const fallbackTrade = fallbackCoin ? generateTradeSetup(fallbackCoin) : null;
       return res.json({
         success: true,
-        trade: cachedPerfectTrade,
-        fromCache: true,
+        trade: fallbackTrade,
+        topPicks: [],
+        fromCache: false,
       });
-    }
-
-    const coins = await fetchLiveMarketData();
-    const trade = findPerfectTradeCoin(coins, preferredDirection);
-
-    if (!trade) {
-      return res.status(500).json({ success: false, error: "Unable to calculate perfect trade setup" });
-    }
-
-    if (!preferredDirection) {
-      cachedPerfectTrade = trade;
-      lastPerfectTradeTime = now;
     }
 
     res.json({
       success: true,
-      trade,
+      trade: result.trade,
+      topPicks: result.topPicks || [],
       fromCache: false,
     });
   } catch (err: any) {
