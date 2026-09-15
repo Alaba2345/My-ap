@@ -1,10 +1,11 @@
-import { Sparkles, Star, TrendingUp, TrendingDown, Zap, ArrowUpRight } from 'lucide-react';
+import { Sparkles, Star, TrendingUp, TrendingDown, Zap, Target } from 'lucide-react';
 import { CryptoCoin } from '../types';
 import { Sparkline } from './Sparkline';
 
 interface CoinTableProps {
   coins: CryptoCoin[];
   onOpenResearch: (symbol: string) => void;
+  onOpenTradeModal?: (symbol: string, direction?: 'LONG' | 'SHORT') => void;
   watchlist: Set<string>;
   onToggleWatchlist: (symbol: string) => void;
 }
@@ -12,6 +13,7 @@ interface CoinTableProps {
 export function CoinTable({
   coins,
   onOpenResearch,
+  onOpenTradeModal,
   watchlist,
   onToggleWatchlist,
 }: CoinTableProps) {
@@ -21,22 +23,27 @@ export function CoinTable({
         <thead className="bg-zinc-950/80 text-zinc-400 border-b border-zinc-800 text-[11px] font-semibold uppercase tracking-wider">
           <tr>
             <th className="py-3 px-3 w-10 text-center">★</th>
-            <th className="py-3 px-3">Coin</th>
-            <th className="py-3 px-3">Price</th>
+            <th className="py-3 px-3">Bybit Pair</th>
+            <th className="py-3 px-3">Mark Price</th>
+            <th className="py-3 px-3 text-center">Signal</th>
             <th className="py-3 px-3 text-right">5m Surge</th>
             <th className="py-3 px-3 text-right">1h Change</th>
             <th className="py-3 px-3 text-right">24h Change</th>
-            <th className="py-3 px-3 text-right">Volume (24h)</th>
-            <th className="py-3 px-3 text-center">Vol Multiplier</th>
-            <th className="py-3 px-3 text-center w-28">24h Trend</th>
-            <th className="py-3 px-3 text-center">Surge Score</th>
-            <th className="py-3 px-3 text-right">AI Action</th>
+            <th className="py-3 px-3 text-right">24h Turnover</th>
+            <th className="py-3 px-3 text-right">Funding</th>
+            <th className="py-3 px-3 text-center w-24">Trend</th>
+            <th className="py-3 px-3 text-right">Trade Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-800/60">
           {coins.map((coin) => {
             const isWatchlisted = watchlist.has(coin.symbol);
             const isSurging = coin.isSurging || coin.change5m >= 2.0;
+            const isBullish = coin.change1h >= 0;
+            const bybitPair = coin.bybitSymbol || `${coin.symbol}USDT`;
+            const turnoverDisplay = coin.turnover24h >= 1e9
+              ? `$${(coin.turnover24h / 1e9).toFixed(2)}B`
+              : `$${(coin.turnover24h / 1e6).toFixed(1)}M`;
 
             return (
               <tr
@@ -66,13 +73,16 @@ export function CoinTable({
                     <div className="flex flex-col">
                       <div className="flex items-center gap-1.5">
                         <span className="font-bold text-zinc-100">{coin.symbol}</span>
+                        <span className="text-[10px] font-mono text-zinc-400 bg-zinc-800 px-1 rounded">
+                          {bybitPair}
+                        </span>
                         {isSurging && (
                           <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase">
                             Breakout
                           </span>
                         )}
                       </div>
-                      <span className="text-[11px] text-zinc-500 truncate max-w-[110px]">
+                      <span className="text-[11px] text-zinc-500 truncate max-w-[120px]">
                         {coin.name}
                       </span>
                     </div>
@@ -80,14 +90,25 @@ export function CoinTable({
                 </td>
 
                 {/* Price */}
-                <td className="py-3 px-3 font-semibold text-zinc-100">
-                  ${coin.price < 1 ? coin.price.toFixed(5) : coin.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                <td className="py-3 px-3 font-semibold text-zinc-100 font-mono">
+                  ${coin.price < 0.0001 ? coin.price.toFixed(7) : coin.price < 1 ? coin.price.toFixed(5) : coin.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                </td>
+
+                {/* Signal Badge */}
+                <td className="py-3 px-3 text-center">
+                  <span className={`inline-block text-[10px] font-extrabold px-2 py-0.5 rounded border uppercase ${
+                    isBullish
+                      ? 'bg-emerald-950 text-emerald-400 border-emerald-800/60'
+                      : 'bg-rose-950 text-rose-400 border-rose-800/60'
+                  }`}>
+                    {isBullish ? 'LONG' : 'SHORT'}
+                  </span>
                 </td>
 
                 {/* 5m Surge Rate */}
                 <td className="py-3 px-3 text-right">
                   <span
-                    className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md font-bold text-xs ${
+                    className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md font-bold text-xs font-mono ${
                       coin.change5m >= 2.0
                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse'
                         : coin.change5m >= 0
@@ -102,7 +123,7 @@ export function CoinTable({
                 {/* 1h Change */}
                 <td className="py-3 px-3 text-right">
                   <span
-                    className={`font-medium ${
+                    className={`font-semibold font-mono ${
                       coin.change1h >= 0 ? 'text-emerald-400' : 'text-rose-400'
                     }`}
                   >
@@ -113,7 +134,7 @@ export function CoinTable({
                 {/* 24h Change */}
                 <td className="py-3 px-3 text-right">
                   <span
-                    className={`font-semibold ${
+                    className={`font-semibold font-mono ${
                       coin.change24h >= 0 ? 'text-emerald-400' : 'text-rose-400'
                     }`}
                   >
@@ -121,22 +142,14 @@ export function CoinTable({
                   </span>
                 </td>
 
-                {/* 24h Volume */}
-                <td className="py-3 px-3 text-right font-medium text-zinc-300">
-                  ${(coin.volume24h / 1_000_000).toFixed(1)}M
+                {/* 24h Bybit Turnover */}
+                <td className="py-3 px-3 text-right font-medium text-zinc-300 font-mono">
+                  {turnoverDisplay}
                 </td>
 
-                {/* Vol Multiplier */}
-                <td className="py-3 px-3 text-center">
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-[11px] font-bold ${
-                      coin.volumeSpikeMultiplier >= 2.5
-                        ? 'bg-amber-950/80 text-amber-300 border border-amber-800/60'
-                        : 'text-zinc-400'
-                    }`}
-                  >
-                    {coin.volumeSpikeMultiplier.toFixed(1)}x
-                  </span>
+                {/* Funding Rate */}
+                <td className="py-3 px-3 text-right font-mono text-[11px] text-zinc-400">
+                  {coin.fundingRate !== undefined ? `${(coin.fundingRate * 100).toFixed(4)}%` : '0.01%'}
                 </td>
 
                 {/* Sparkline */}
@@ -144,39 +157,35 @@ export function CoinTable({
                   <div className="flex justify-center">
                     <Sparkline
                       data={coin.sparkline}
-                      width={90}
-                      height={24}
+                      width={80}
+                      height={22}
                       isPositive={coin.change24h >= 0}
                     />
                   </div>
                 </td>
 
-                {/* Surge Momentum Score */}
-                <td className="py-3 px-3 text-center">
-                  <span
-                    className={`inline-block font-black text-xs px-2 py-0.5 rounded ${
-                      coin.surgeScore >= 75
-                        ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/60'
-                        : coin.surgeScore >= 45
-                        ? 'bg-amber-950 text-amber-400 border border-amber-800/60'
-                        : 'bg-zinc-800 text-zinc-400'
-                    }`}
-                  >
-                    {coin.surgeScore}
-                  </span>
-                </td>
-
-                {/* Deep Research CTA */}
+                {/* Actions: TP/SL & AI */}
                 <td className="py-3 px-3 text-right">
-                  <button
-                    type="button"
-                    onClick={() => onOpenResearch(coin.symbol)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-zinc-800 hover:bg-emerald-600 hover:text-zinc-950 text-zinc-200 text-[11px] font-bold transition-colors border border-zinc-700 hover:border-emerald-500"
-                  >
-                    <Sparkles className="w-3 h-3" />
-                    <span>Research</span>
-                    <ArrowUpRight className="w-3 h-3" />
-                  </button>
+                  <div className="flex items-center justify-end gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onOpenTradeModal?.(coin.symbol, isBullish ? 'LONG' : 'SHORT')}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-zinc-950 text-[11px] font-bold transition-all shadow-xs"
+                      title="Set TP, Entry, and SL"
+                    >
+                      <Target className="w-3 h-3" />
+                      <span>TP/SL</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onOpenResearch(coin.symbol)}
+                      className="p-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-purple-300 text-[11px] transition-colors border border-zinc-700"
+                      title="AI Research"
+                    >
+                      <Sparkles className="w-3 h-3 text-purple-400" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             );

@@ -2,6 +2,7 @@ export interface CryptoCoin {
   id: string;
   symbol: string;
   name: string;
+  bybitSymbol?: string;
   price: number;
   change1m: number;
   change5m: number;
@@ -9,6 +10,9 @@ export interface CryptoCoin {
   change1h: number;
   change24h: number;
   volume24h: number;
+  turnover24h?: number;
+  openInterest?: number;
+  fundingRate?: number;
   volumeSpikeMultiplier: number;
   high24h: number;
   low24h: number;
@@ -18,6 +22,56 @@ export interface CryptoCoin {
   surgeScore: number; // 0 - 100
   isSurging: boolean;
   surgeStage: 'breakout' | 'accelerating' | 'parabolic' | 'cooling';
+  quickSignal?: 'BUY' | 'SELL' | 'NEUTRAL';
+}
+
+export interface TradeTarget {
+  price: number;
+  gainPercent: number;
+  rr: number;
+  label: string;
+  roiAtLeverage?: {
+    lev3x: number;
+    lev5x: number;
+    lev10x: number;
+  };
+}
+
+export interface TradeSetup {
+  symbol: string;
+  name: string;
+  bybitSymbol: string;
+  currentPrice: number;
+  direction: 'LONG' | 'SHORT';
+  setupType: 'Breakout Continuation' | 'High-Volume Surge' | 'Support Bounce' | 'Overextended Exhaustion Short' | 'Range Breakout';
+  confidenceScore: number; // 0 - 100
+  entryZone: {
+    min: number;
+    max: number;
+    recommended: number;
+  };
+  targets: {
+    tp1: TradeTarget;
+    tp2: TradeTarget;
+    tp3: TradeTarget;
+  };
+  stopLoss: {
+    price: number;
+    lossPercent: number;
+    invalidationReason: string;
+    riskAtLeverage?: {
+      lev3x: number;
+      lev5x: number;
+      lev10x: number;
+    };
+  };
+  riskRewardRatio: number; // e.g. 3.2
+  recommendedLeverage: string; // e.g. "3x - 5x"
+  maxRiskPercent: number; // e.g. 1.5 - 2%
+  confluenceFactors: string[];
+  summary: string;
+  generatedAt: number;
+  isAiGenerated?: boolean;
 }
 
 export interface SurgeAlert {

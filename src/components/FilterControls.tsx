@@ -1,11 +1,13 @@
-import { Search, LayoutGrid, List, Flame, Star, SlidersHorizontal } from 'lucide-react';
+import { Search, LayoutGrid, List, Flame, Star, SlidersHorizontal, ArrowUpRight, ArrowDownRight, Droplets } from 'lucide-react';
 import { ScannerConfig } from '../types';
+
+export type CategoryFilterType = 'all' | 'surging' | 'long' | 'short' | 'liquid' | 'mega' | 'watchlist';
 
 interface FilterControlsProps {
   searchTerm: string;
   onSearchChange: (val: string) => void;
-  activeCategory: 'all' | 'surging' | 'mega' | 'mid' | 'low' | 'watchlist';
-  onCategoryChange: (cat: 'all' | 'surging' | 'mega' | 'mid' | 'low' | 'watchlist') => void;
+  activeCategory: CategoryFilterType;
+  onCategoryChange: (cat: CategoryFilterType) => void;
   sortBy: 'surgeScore' | 'change5m' | 'change1h' | 'change24h' | 'volume24h';
   onSortByChange: (sort: 'surgeScore' | 'change5m' | 'change1h' | 'change24h' | 'volume24h') => void;
   viewMode: 'cards' | 'table';
@@ -30,12 +32,12 @@ export function FilterControls({
   onOpenSettings,
   config,
 }: FilterControlsProps) {
-  const categories: { id: 'all' | 'surging' | 'mega' | 'mid' | 'low' | 'watchlist'; label: string; count?: number; icon?: any }[] = [
-    { id: 'all', label: 'All Pairs' },
+  const categories: { id: CategoryFilterType; label: string; count?: number; icon?: any }[] = [
+    { id: 'all', label: 'All Bybit Coins' },
     { id: 'surging', label: 'Surging Now', count: surgingCount, icon: Flame },
-    { id: 'mega', label: 'Mega Caps' },
-    { id: 'mid', label: 'Mid-Tier L1s' },
-    { id: 'low', label: 'Low-Caps & Gems' },
+    { id: 'long', label: 'Long Setups', icon: ArrowUpRight },
+    { id: 'short', label: 'Short Setups', icon: ArrowDownRight },
+    { id: 'liquid', label: 'Top Liquid (> $15M)', icon: Droplets },
     { id: 'watchlist', label: 'Watchlist', count: watchlistCount, icon: Star },
   ];
 

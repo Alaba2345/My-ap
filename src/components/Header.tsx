@@ -37,17 +37,17 @@ export function Header({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-zinc-100 tracking-tight flex items-center gap-1.5">
-                Crypto Surge Radar
+                Bybit Crypto Radar
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800/60 uppercase tracking-wider">
-                  Live Scanner
+                  Bybit 760+ Linear Pairs
                 </span>
               </h1>
             </div>
             <p className="text-xs text-zinc-400 flex items-center gap-2">
-              <span>Immediate Breakout Alerts</span>
+              <span>Automated TP / SL Analysis</span>
               <span className="inline-block w-1 h-1 rounded-full bg-zinc-700" />
               <span className="flex items-center gap-1 text-emerald-400 font-medium">
-                <Sparkles className="w-3 h-3" /> AI Deep Research Engine
+                <Sparkles className="w-3 h-3" /> Real-Time Perfect Trade Selection
               </span>
             </p>
           </div>
@@ -57,12 +57,13 @@ export function Header({
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Active Surges Pill */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-300">
+            <span className="text-zinc-500">Bybit Pairs:</span>
+            <span className="font-bold text-zinc-200">{totalCoinsCount > 0 ? totalCoinsCount : '760+'}</span>
+            <span className="text-zinc-600">•</span>
             <span className="text-zinc-500">Active Surges:</span>
             <span className={`font-bold px-1.5 py-0.5 rounded ${activeSurgesCount > 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse' : 'text-zinc-400'}`}>
               {activeSurgesCount}
             </span>
-            <span className="text-zinc-600">/</span>
-            <span className="text-zinc-400">{totalCoinsCount} tracked</span>
           </div>
 
           {/* Auto Research Toggle */}

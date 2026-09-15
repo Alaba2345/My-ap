@@ -1,6 +1,6 @@
 {
   "name": "Crypto Surge Alert & Deep Research",
-  "description": "Real-time cryptocurrency breakout radar alerting on rapid coin surges with immediate AI-powered deep research, volume spikes, and catalyst analysis.",
+  "description": "Real-time Bybit cryptocurrency breakout radar tracking all 760+ perpetual coins with automated trade analysis, top coin picks, and precise Entry, Take Profit (TP), and Stop Loss (SL) setups.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -7,9 +7,11 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { CryptoCoin, SurgeAlert, DeepResearchReport, ScannerConfig } from './types';
 import { Header } from './components/Header';
 import { SurgeAlertTicker } from './components/SurgeAlertTicker';
-import { FilterControls } from './components/FilterControls';
+import { FilterControls, CategoryFilterType } from './components/FilterControls';
 import { CoinCard } from './components/CoinCard';
 import { CoinTable } from './components/CoinTable';
+import { PerfectTradeCard } from './components/PerfectTradeCard';
+import { TradeSetupModal } from './components/TradeSetupModal';
 import { DeepResearchModal } from './components/DeepResearchModal';
 import { AlertsHistoryDrawer } from './components/AlertsHistoryDrawer';
 import { SettingsModal } from './components/SettingsModal';
@@ -56,7 +58,7 @@ export default function App() {
 
   // UI state
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeCategory, setActiveCategory] = useState<'all' | 'surging' | 'mega' | 'mid' | 'low' | 'watchlist'>('all');
+  const [activeCategory, setActiveCategory] = useState<CategoryFilterType>('all');
   const [sortBy, setSortBy] = useState<'surgeScore' | 'change5m' | 'change1h' | 'change24h' | 'volume24h'>('surgeScore');
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
 
@@ -65,12 +67,25 @@ export default function App() {
   const [currentReport, setCurrentReport] = useState<DeepResearchReport | null>(null);
   const [isResearchLoading, setIsResearchLoading] = useState(false);
   const [isResearchModalOpen, setIsResearchModalOpen] = useState(false);
+
+  // Trade Setup modal state
+  const [selectedSymbolForTrade, setSelectedSymbolForTrade] = useState<string | null>(null);
+  const [tradeModalDirection, setTradeModalDirection] = useState<'LONG' | 'SHORT' | undefined>(undefined);
+  const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
+
   const [isAlertsDrawerOpen, setIsAlertsDrawerOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   // Alert tracking ref to detect brand-new alerts
   const seenAlertIdsRef = useRef<Set<string>>(new Set());
   const autoResearchedSymbolsRef = useRef<Set<string>>(new Set());
+
+  // Open Trade Setup Modal
+  const handleOpenTradeModal = (symbol: string, direction?: 'LONG' | 'SHORT') => {
+    setSelectedSymbolForTrade(symbol);
+    setTradeModalDirection(direction);
+    setIsTradeModalOpen(true);
+  };
 
   // Save config
   const updateConfig = (newConfig: Partial<ScannerConfig>) => {
@@ -245,12 +260,14 @@ export default function App() {
     // Category filter
     if (activeCategory === 'surging') {
       list = list.filter((c) => c.isSurging || c.change5m >= config.min5mSurge);
+    } else if (activeCategory === 'long') {
+      list = list.filter((c) => c.change1h >= 0);
+    } else if (activeCategory === 'short') {
+      list = list.filter((c) => c.change1h < 0);
+    } else if (activeCategory === 'liquid') {
+      list = list.filter((c) => c.turnover24h >= 15_000_000);
     } else if (activeCategory === 'mega') {
       list = list.filter((c) => c.marketCapTier === 'mega');
-    } else if (activeCategory === 'mid') {
-      list = list.filter((c) => c.marketCapTier === 'mid');
-    } else if (activeCategory === 'low') {
-      list = list.filter((c) => c.marketCapTier === 'low' || c.marketCapTier === 'degen');
     } else if (activeCategory === 'watchlist') {
       list = list.filter((c) => watchlist.has(c.symbol));
     }
@@ -261,7 +278,7 @@ export default function App() {
       if (sortBy === 'change5m') return b.change5m - a.change5m;
       if (sortBy === 'change1h') return b.change1h - a.change1h;
       if (sortBy === 'change24h') return b.change24h - a.change24h;
-      if (sortBy === 'volume24h') return b.volume24h - a.volume24h;
+      if (sortBy === 'volume24h') return b.turnover24h - a.turnover24h;
       return 0;
     });
 
@@ -299,7 +316,7 @@ export default function App() {
       />
 
       {/* Main Body */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-4 space-y-4">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-4 space-y-5">
         {/* Error notification banner if any */}
         {marketError && (
           <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-800/60 text-amber-300 text-xs flex items-center justify-between">
@@ -316,6 +333,14 @@ export default function App() {
             </button>
           </div>
         )}
+
+        {/* PRIMARY FEATURE: Automated Perfect Coin Selection & Trade Setup (TP, Entry, SL) */}
+        <section aria-label="Automated Perfect Trade Analysis">
+          <PerfectTradeCard
+            onOpenTradeModal={handleOpenTradeModal}
+            onOpenResearch={(sym) => runDeepResearch(sym)}
+          />
+        </section>
 
         {/* Filter & Sorting bar */}
         <FilterControls
@@ -337,7 +362,7 @@ export default function App() {
         {isLoadingMarket && coins.length === 0 ? (
           <div className="py-24 flex flex-col items-center justify-center space-y-3 text-zinc-500">
             <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-            <span className="text-xs font-medium">Initializing Real-Time Crypto Surge Engine...</span>
+            <span className="text-xs font-medium">Scanning Bybit V5 Perpetual Markets & Calculating Setups...</span>
           </div>
         ) : filteredAndSortedCoins.length === 0 ? (
           <div className="py-20 text-center rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-8">
@@ -350,13 +375,13 @@ export default function App() {
                 ? 'Your watchlist is empty. Click the star icon on any token to track it here.'
                 : 'Try adjusting your search keywords or volume threshold.'}
             </p>
-            {activeCategory === 'surging' && (
+            {activeCategory !== 'all' && (
               <button
                 type="button"
                 onClick={() => setActiveCategory('all')}
                 className="mt-4 px-4 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold transition-colors"
               >
-                View All Coins
+                View All Bybit Coins
               </button>
             )}
           </div>
@@ -367,6 +392,7 @@ export default function App() {
                 key={coin.id}
                 coin={coin}
                 onOpenResearch={(sym) => runDeepResearch(sym)}
+                onOpenTradeModal={handleOpenTradeModal}
                 isWatchlisted={watchlist.has(coin.symbol)}
                 onToggleWatchlist={toggleWatchlist}
                 isResearchLoading={isResearchLoading && selectedSymbolForResearch === coin.symbol}
@@ -377,6 +403,7 @@ export default function App() {
           <CoinTable
             coins={filteredAndSortedCoins}
             onOpenResearch={(sym) => runDeepResearch(sym)}
+            onOpenTradeModal={handleOpenTradeModal}
             watchlist={watchlist}
             onToggleWatchlist={toggleWatchlist}
           />
@@ -388,15 +415,25 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Radar Engine Active (Binance 24hr Feed + Gemini 3.8 Flash)</span>
+            <span>Bybit Linear Perpetuals Live (760+ Coins) • Automated TP/SL Engine • Gemini 3.8 Flash AI</span>
           </div>
           <div className="flex items-center gap-3">
             <span>Last sync: {new Date(lastMarketUpdate).toLocaleTimeString()}</span>
             <span>•</span>
-            <span>Audio: {config.soundEnabled ? 'Enabled' : 'Muted'}</span>
+            <span>Audio Alerts: {config.soundEnabled ? 'Enabled' : 'Muted'}</span>
           </div>
         </div>
       </footer>
+
+      {/* Trade Setup (TP / Entry / SL) Modal */}
+      <TradeSetupModal
+        isOpen={isTradeModalOpen}
+        onClose={() => setIsTradeModalOpen(false)}
+        symbol={selectedSymbolForTrade}
+        coin={selectedSymbolForTrade ? coinsMap.get(selectedSymbolForTrade) : undefined}
+        initialDirection={tradeModalDirection}
+        onOpenResearch={(sym) => runDeepResearch(sym)}
+      />
 
       {/* Deep Research Modal */}
       <DeepResearchModal
