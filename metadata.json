@@ -1,0 +1,6 @@
+{
+  "name": "Crypto Surge Alert & Deep Research",
+  "description": "Real-time cryptocurrency breakout radar alerting on rapid coin surges with immediate AI-powered deep research, volume spikes, and catalyst analysis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
