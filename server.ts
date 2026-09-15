@@ -468,52 +468,58 @@ function findPerfectTradeCoin(allCoins: any[], preferredDirection?: 'LONG' | 'SH
     }
   }
 
-  // Filter coins with sufficient Bybit liquidity (> $10M turnover or top high-conviction tier)
-  const candidates = allCoins.filter(
+  // Filter coins with sufficient Bybit liquidity (> $400k turnover or active trading volume)
+  // This allows all 760+ genuine Bybit perpetual pairs to be evaluated organically
+  const pool = allCoins.filter(
     (c) =>
       !isNonCryptoOrStock(c.symbol) &&
-      (c.turnover24h >= 10_000_000 || ["BTC", "ETH", "SOL", "SUI", "DOGE", "XRP", "NEAR", "AKE", "ARB", "PEPE", "AVAX", "LINK"].includes(c.symbol)) &&
+      (c.turnover24h >= 400_000 || ['BTC', 'ETH', 'SOL'].includes(c.symbol)) &&
       c.price > 0
   );
 
-  const pool = candidates.length > 0 ? candidates : allCoins.filter((c) => !isNonCryptoOrStock(c.symbol) && c.price > 0);
-
   const scored = pool.map((coin) => {
-    const isLong = coin.change1h >= 0 || (coin.change24h > 4 && coin.change1h > -1);
+    const isLong = coin.change1h >= 0 || (coin.change24h > 3 && coin.change1h > -1);
     const range = coin.high24h - coin.low24h;
     const posInRange = range > 0 ? (coin.price - coin.low24h) / range : 0.5;
 
-    let score = 50;
-    // 1h momentum weight
-    score += Math.abs(coin.change1h) * 3.5;
-    // 5m velocity weight
-    score += Math.abs(coin.change5m) * 3;
-    // Bybit turnover log weight (rewards deep liquid markets with clean execution)
-    score += Math.min(28, Math.log10(Math.max(1000, coin.turnover24h)) * 3.2);
+    let score = 40;
 
-    // Tier 1 liquidity bonus (BTC, ETH, SOL, SUI, XRP)
-    if (["BTC", "ETH", "SOL", "SUI", "XRP", "DOGE"].includes(coin.symbol)) {
-      score += 10;
+    // Organic 1-hour momentum weight (dominant factor: +5% gives +22.5 pts, +10% gives +45 pts)
+    score += Math.abs(coin.change1h) * 4.5;
+
+    // Organic 5-minute velocity weight (+2% velocity gives +16 pts)
+    score += Math.abs(coin.change5m) * 8.0;
+
+    // Bybit Volume Spike Multiplier (e.g., 2.8x volume surge gives +21.6 pts)
+    const spike = coin.volumeSpikeMultiplier || 1.0;
+    score += Math.min(30, (spike - 1.0) * 12);
+
+    // 24-hour macro trend confluence
+    if ((isLong && coin.change24h > 0) || (!isLong && coin.change24h < 0)) {
+      score += 8;
     }
 
-    // Breakout confluence
-    if (isLong && posInRange > 0.82) score += 14;
-    // Bounce confluence
-    if (isLong && posInRange < 0.25 && coin.change5m > 0.5) score += 12;
-    // Breakdown short confluence
-    if (!isLong && posInRange < 0.2) score += 12;
+    // Breakout confluence (trading near local highs/lows)
+    if (isLong && posInRange > 0.80) score += 15;
+    if (!isLong && posInRange < 0.20) score += 15;
 
-    // Healthy funding rate bonus
-    if (Math.abs(coin.fundingRate) < 0.0003) score += 6;
+    // Turnover liquidity sanity (capped at 14 pts so mega billions does not suppress genuine runners)
+    score += Math.min(14, Math.log10(Math.max(100_000, coin.turnover24h)) * 1.8);
+
+    // Healthy funding rate (avoid crowded liquidation squeezes)
+    if (Math.abs(coin.fundingRate) < 0.0004) score += 5;
+
+    // Surge stage bonus
+    if (coin.isSurging) score += 12;
 
     return {
       coin,
-      score,
+      score: Math.round(score),
       direction: (isLong ? 'LONG' : 'SHORT') as 'LONG' | 'SHORT',
     };
   });
 
-  // Sort overall by score
+  // Sort overall strictly by organic breakout score
   scored.sort((a, b) => b.score - a.score);
 
   // Filter if preferred direction is specified
@@ -528,7 +534,7 @@ function findPerfectTradeCoin(allCoins: any[], preferredDirection?: 'LONG' | 'SH
   const topLong = scored.find((s) => s.direction === 'LONG');
   const topShort = scored.find((s) => s.direction === 'SHORT');
   const topMega = scored.find((s) => ['BTC', 'ETH', 'SOL'].includes(s.coin.symbol));
-  const topBreakout = scored.find((s) => s.coin.isSurging || s.coin.change5m >= 2.0);
+  const topBreakout = scored.find((s) => s.coin.isSurging || s.coin.change5m >= 1.5 || Math.abs(s.coin.change1h) >= 3.0);
 
   const topPicksMap = new Map<string, any>();
   if (primaryTrade) {
@@ -540,7 +546,7 @@ function findPerfectTradeCoin(allCoins: any[], preferredDirection?: 'LONG' | 'SH
       currentPrice: primaryTrade.currentPrice,
       confidenceScore: primaryTrade.confidenceScore,
       setupType: primaryTrade.setupType,
-      tag: "🔥 #1 Best Pick",
+      tag: "🔥 #1 Organic Pick",
     });
   }
 
@@ -564,6 +570,66 @@ function findPerfectTradeCoin(allCoins: any[], preferredDirection?: 'LONG' | 'SH
     trade: primaryTrade,
     topPicks: Array.from(topPicksMap.values()),
   };
+}
+
+// Multi-coin radar engine: detects and prepares trade signals for all surging coins immediately
+function scanAllDetectedTrades(allCoins: any[]): any[] {
+  if (!allCoins || allCoins.length === 0) return [];
+  const now = Date.now();
+
+  const qualified = allCoins.filter((c) => {
+    if (isNonCryptoOrStock(c.symbol) || c.price <= 0 || c.turnover24h < 250_000) return false;
+    const abs5m = Math.abs(c.change5m || 0);
+    const abs1h = Math.abs(c.change1h || 0);
+    const spike = c.volumeSpikeMultiplier || 1.0;
+    return c.isSurging || abs5m >= 0.6 || abs1h >= 2.0 || spike >= 1.8;
+  });
+
+  // Sort by urgency, breakout momentum, and volume spike
+  qualified.sort((a, b) => {
+    const scoreA = Math.abs(a.change5m || 0) * 4 + Math.abs(a.change1h || 0) * 2.5 + (a.volumeSpikeMultiplier || 1) * 8 + (a.isSurging ? 15 : 0);
+    const scoreB = Math.abs(b.change5m || 0) * 4 + Math.abs(b.change1h || 0) * 2.5 + (b.volumeSpikeMultiplier || 1) * 8 + (b.isSurging ? 15 : 0);
+    return scoreB - scoreA;
+  });
+
+  // Generate actionable institutional trade setups for all detected coins
+  return qualified.slice(0, 20).map((coin) => {
+    const trade = generateTradeSetup(coin);
+    let reason = "High-Volume Bybit Surge";
+    if (coin.change5m >= 1.0) {
+      reason = `⚡ 5m Velocity Spike (+${coin.change5m}%) with ${(coin.volumeSpikeMultiplier || 2).toFixed(1)}x Vol`;
+    } else if (coin.change5m <= -1.0) {
+      reason = `🔻 5m Flush (${coin.change5m}%) with ${(coin.volumeSpikeMultiplier || 2).toFixed(1)}x Vol`;
+    } else if (coin.change1h >= 2.5) {
+      reason = `🔥 1h Parabolic Breakout (+${coin.change1h}%)`;
+    } else if (coin.change1h <= -2.5) {
+      reason = `📉 1h Heavy Breakdown (${coin.change1h}%)`;
+    } else if ((coin.volumeSpikeMultiplier || 1) >= 2.0) {
+      reason = `🌊 Orderbook Volume Spike (${(coin.volumeSpikeMultiplier || 2).toFixed(1)}x)`;
+    }
+
+    return {
+      id: `detected-${coin.symbol}-${now}`,
+      symbol: trade.symbol,
+      name: trade.name,
+      bybitSymbol: trade.bybitSymbol,
+      currentPrice: trade.currentPrice,
+      direction: trade.direction,
+      setupType: trade.setupType,
+      confidenceScore: trade.confidenceScore,
+      detectedReason: reason,
+      detectedAt: now,
+      entryZone: trade.entryZone,
+      targets: trade.targets,
+      stopLoss: trade.stopLoss,
+      recommendedLeverage: trade.recommendedLeverage,
+      riskRewardRatio: trade.riskRewardRatio,
+      volumeSpikeMultiplier: coin.volumeSpikeMultiplier || 1.0,
+      change1h: coin.change1h || 0,
+      change5m: coin.change5m || 0,
+      turnover24h: coin.turnover24h || 0,
+    };
+  });
 }
 
 function generateInitialFallbackCoins(now: number) {
@@ -895,6 +961,22 @@ app.get("/api/crypto/alerts", (req, res) => {
     alerts: alertHistory,
     timestamp: Date.now(),
   });
+});
+
+// 6. Live Detected Trades Stream (Instant actionable coins to trade as detected)
+app.get("/api/crypto/detected-trades", async (req, res) => {
+  try {
+    const coins = await fetchLiveMarketData();
+    const detected = scanAllDetectedTrades(coins);
+    res.json({
+      success: true,
+      timestamp: Date.now(),
+      count: detected.length,
+      signals: detected,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // 3. Deep Research via Gemini

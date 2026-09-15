@@ -89,6 +89,40 @@ export interface SurgeAlert {
   aiSummarySnippet?: string;
 }
 
+export interface DetectedTradeSignal {
+  id: string;
+  symbol: string;
+  name: string;
+  bybitSymbol: string;
+  currentPrice: number;
+  direction: 'LONG' | 'SHORT';
+  setupType: string;
+  confidenceScore: number;
+  detectedReason: string;
+  detectedAt: number;
+  entryZone: {
+    min: number;
+    max: number;
+    recommended: number;
+  };
+  targets: {
+    tp1: TradeTarget;
+    tp2: TradeTarget;
+    tp3: TradeTarget;
+  };
+  stopLoss: {
+    price: number;
+    lossPercent: number;
+    invalidationReason: string;
+  };
+  recommendedLeverage: string;
+  riskRewardRatio: number;
+  volumeSpikeMultiplier: number;
+  change1h: number;
+  change5m: number;
+  turnover24h: number;
+}
+
 export interface CatalystItem {
   category: string;
   description: string;

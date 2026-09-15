@@ -55,6 +55,57 @@ function fmtPrice(val: number | undefined): string {
   return val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 }
 
+// Organic coin selection algorithm: scans 760+ Bybit pairs for real momentum, volume spikes, and breakouts
+export function findTopOrganicCoin(coins: CryptoCoin[], preferredDirection?: 'LONG' | 'SHORT'): CryptoCoin | null {
+  if (!coins || coins.length === 0) return null;
+
+  const validCoins = coins.filter(
+    (c) =>
+      c.price > 0 &&
+      (c.turnover24h >= 300_000 || c.volume24h >= 300_000) &&
+      !c.symbol.includes('STOCK') &&
+      !['USDC', 'EUR', 'XAU', 'XAG'].includes(c.symbol)
+  );
+
+  const pool = validCoins.length > 0 ? validCoins : coins;
+
+  const scored = pool.map((coin) => {
+    const isLong = coin.change1h >= 0 || (coin.change24h > 3 && coin.change1h > -1);
+    const range = coin.high24h - coin.low24h;
+    const posInRange = range > 0 ? (coin.price - coin.low24h) / range : 0.5;
+
+    let score = 40;
+    // 1-hour organic momentum (heavy weighting)
+    score += Math.abs(coin.change1h || 0) * 4.5;
+    // 5-minute surge velocity
+    score += Math.abs(coin.change5m || 0) * 8.0;
+    // Bybit volume spike multiplier
+    const spike = coin.volumeSpikeMultiplier || 1.0;
+    score += Math.min(30, (spike - 1.0) * 12);
+    // Macro 24h trend alignment
+    if ((isLong && coin.change24h > 0) || (!isLong && coin.change24h < 0)) score += 8;
+    // Breakout positioning near local highs/lows
+    if (isLong && posInRange > 0.8) score += 15;
+    if (!isLong && posInRange < 0.2) score += 15;
+    if (coin.isSurging) score += 12;
+
+    return {
+      coin,
+      score: Math.round(score),
+      direction: (isLong ? 'LONG' : 'SHORT') as 'LONG' | 'SHORT',
+    };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+
+  if (preferredDirection) {
+    const matched = scored.find((s) => s.direction === preferredDirection);
+    if (matched) return matched.coin;
+  }
+
+  return scored[0]?.coin || coins[0] || null;
+}
+
 // Client-side pure fallback generator guaranteeing 100% uptime with 0ms blank screen
 function createClientTradeSetup(coin: CryptoCoin, preferredDirection?: 'LONG' | 'SHORT'): TradeSetup {
   const currentPrice = coin.price || 1.0;
@@ -253,7 +304,7 @@ export function PerfectTradeCard({
     if (coins.length > 0) {
       const candidate = symbol
         ? coins.find((c) => c.symbol === symbol.toUpperCase())
-        : coins.find((c) => ['SOL', 'BTC', 'ETH', 'SUI', 'XRP'].includes(c.symbol)) || coins[0];
+        : findTopOrganicCoin(coins, direction);
       if (candidate) {
         setTrade(createClientTradeSetup(candidate, direction));
       }
@@ -269,7 +320,7 @@ export function PerfectTradeCard({
     }
   }, [targetSymbol]);
 
-  // Real-time live auto-detection loop: brings up newest #1 coin every 4 seconds!
+  // Real-time live auto-detection loop: organically brings up newest #1 coin every 4 seconds!
   useEffect(() => {
     if (!isAutoTracking || activeSymbol) return;
 
@@ -301,9 +352,35 @@ export function PerfectTradeCard({
                 if (data.topPicks && Array.isArray(data.topPicks)) {
                   setTopPicks(data.topPicks);
                 }
+              } else if (coins.length > 0) {
+                // Fallback directly to client organic detector
+                const topOrganic = findTopOrganicCoin(coins, dir);
+                if (topOrganic) {
+                  const clientSetup = createClientTradeSetup(topOrganic, dir);
+                  setTrade((current) => {
+                    if (current && current.symbol !== clientSetup.symbol) {
+                      setAutoSwitchedAlert({
+                        symbol: clientSetup.symbol,
+                        previousSymbol: current.symbol,
+                        direction: clientSetup.direction,
+                        score: clientSetup.confidenceScore,
+                        timestamp: Date.now(),
+                      });
+                      if (soundEnabled) playSurgeAlertSound(0.7);
+                    }
+                    return clientSetup;
+                  });
+                }
               }
             })
-            .catch(() => {});
+            .catch(() => {
+              if (coins.length > 0) {
+                const topOrganic = findTopOrganicCoin(coins, dir);
+                if (topOrganic) {
+                  setTrade(createClientTradeSetup(topOrganic, dir));
+                }
+              }
+            });
           return 4;
         }
         return prev - 1;
@@ -311,7 +388,7 @@ export function PerfectTradeCard({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isAutoTracking, activeSymbol, directionFilter, soundEnabled]);
+  }, [isAutoTracking, activeSymbol, directionFilter, soundEnabled, coins]);
 
   // Keep live orderbook price dynamically synchronized with incoming Bybit tick
   useEffect(() => {
@@ -439,23 +516,38 @@ Generated: ${new Date(trade.generatedAt).toLocaleTimeString()}`;
     return coins.filter((c) => c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)).slice(0, 15);
   }, [coins, coinSearchQuery]);
 
-  // Default quick coins
+  // Dynamic Quick Coins including active pick and top organic gainers
   const quickCoins = useMemo(() => {
-    const defaultSymbols = ['SOL', 'BTC', 'ETH', 'SUI', 'XRP', 'DOGE', 'NEAR', 'AKE'];
-    const result: Array<{ symbol: string; label: string; currentPrice?: number }> = [];
+    const result: Array<{ symbol: string; label: string }> = [];
 
     // Add Top Pick if exists
     if (trade) {
       result.push({ symbol: trade.symbol, label: '⭐ Selected' });
     }
 
-    // Add extra picks
+    // Add top organic gainers from live Bybit pairs
+    const topMovers = [...coins]
+      .filter((c) => c.price > 0 && !c.symbol.includes('STOCK') && !['USDC', 'EUR'].includes(c.symbol))
+      .sort((a, b) => Math.abs(b.change1h || 0) - Math.abs(a.change1h || 0))
+      .slice(0, 3);
+
+    topMovers.forEach((tm) => {
+      if (!result.some((r) => r.symbol === tm.symbol)) {
+        result.push({
+          symbol: tm.symbol,
+          label: `${tm.change1h >= 0 ? '🔥' : '⚡'} ${tm.symbol} (${tm.change1h >= 0 ? '+' : ''}${tm.change1h}%)`,
+        });
+      }
+    });
+
+    // Add top picks from backend
     topPicks.forEach((tp) => {
       if (!result.some((r) => r.symbol === tp.symbol)) {
         result.push({ symbol: tp.symbol, label: tp.tag.split(' ')[0] + ' ' + tp.symbol });
       }
     });
 
+    const defaultSymbols = ['SOL', 'SUI', 'DOGE', 'BTC', 'ETH'];
     defaultSymbols.forEach((sym) => {
       if (!result.some((r) => r.symbol === sym)) {
         result.push({ symbol: sym, label: sym });
@@ -463,7 +555,7 @@ Generated: ${new Date(trade.generatedAt).toLocaleTimeString()}`;
     });
 
     return result.slice(0, 7);
-  }, [trade, topPicks]);
+  }, [trade, topPicks, coins]);
 
   const isLong = trade?.direction === 'LONG';
 

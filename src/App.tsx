@@ -11,6 +11,7 @@ import { FilterControls, CategoryFilterType } from './components/FilterControls'
 import { CoinCard } from './components/CoinCard';
 import { CoinTable } from './components/CoinTable';
 import { PerfectTradeCard } from './components/PerfectTradeCard';
+import { LiveDetectedTradesFeed } from './components/LiveDetectedTradesFeed';
 import { TradeSetupModal } from './components/TradeSetupModal';
 import { DeepResearchModal } from './components/DeepResearchModal';
 import { AlertsHistoryDrawer } from './components/AlertsHistoryDrawer';
@@ -421,6 +422,22 @@ export default function App() {
             onOpenResearch={(sym) => runDeepResearch(sym)}
             targetSymbol={targetTradeSymbol}
             onClearTargetSymbol={() => setTargetTradeSymbol(null)}
+            soundEnabled={config.soundEnabled}
+          />
+        </section>
+
+        {/* MULTI-COIN LIVE DETECTED STREAM: Immediately surfaces every coin detected by the radar */}
+        <section aria-label="Live Detected Coins Feed">
+          <LiveDetectedTradesFeed
+            onSelectCoinForTrade={(symbol) => {
+              setTargetTradeSymbol(symbol);
+              const el = document.getElementById('perfect-coin-to-trade-section');
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }
+            }}
+            onOpenTradeModal={handleOpenTradeModal}
+            onOpenResearch={(sym) => runDeepResearch(sym)}
             soundEnabled={config.soundEnabled}
           />
         </section>
